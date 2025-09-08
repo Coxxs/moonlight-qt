@@ -61,6 +61,8 @@ after_build:
   - cmd: 'appveyor PushArtifact build\symbols-x64-Release\MoonlightDebuggingSymbols-x64-%VERSION%.zip -FileName MoonlightDebuggingSymbols-x64-r%APPVEYOR_BUILD_NUMBER%.zip'
   - cmd: 'appveyor PushArtifact build\installer-arm64-Release\MoonlightPortable-arm64-%VERSION%.zip -FileName MoonlightPortable-arm64-r%APPVEYOR_BUILD_NUMBER%.zip'
   - cmd: 'appveyor PushArtifact build\symbols-arm64-Release\MoonlightDebuggingSymbols-arm64-%VERSION%.zip -FileName MoonlightDebuggingSymbols-arm64-r%APPVEYOR_BUILD_NUMBER%.zip'
+  - cmd: 'appveyor PushArtifact build\build-x64-Release\Moonlight.msi -FileName Moonlight-x64-r%APPVEYOR_BUILD_NUMBER%.msi'
+  - cmd: 'appveyor PushArtifact build\build-arm64-Release\Moonlight.msi -FileName Moonlight-arm64-r%APPVEYOR_BUILD_NUMBER%.msi'
   - sh: '[ "$BUILD_TARGET" != steamlink ] || appveyor PushArtifact build/installer-release/Moonlight-SteamLink-$VERSION.zip -FileName Moonlight-SteamLink-r$APPVEYOR_BUILD_NUMBER.zip'
   - sh: '[ "$BUILD_TARGET" != macos ] || appveyor PushArtifact build/installer-Release/Moonlight-$VERSION.dmg -FileName Moonlight-r$APPVEYOR_BUILD_NUMBER.dmg'
   - sh: '[ "$BUILD_TARGET" != linux ] || appveyor PushArtifact build/installer-release/Moonlight-$VERSION-x86_64.AppImage -FileName Moonlight-r$APPVEYOR_BUILD_NUMBER-x86_64.AppImage'
