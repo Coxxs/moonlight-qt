@@ -1615,6 +1615,8 @@ bool Session::startConnectionAsync()
 
     QString rtspSessionUrl;
 
+    bool resuming = m_Computer->currentGameId != 0;
+
     try {
         NvHTTP http(m_Computer);
         http.startApp(m_Computer->currentGameId != 0 ? "resume" : "launch",
@@ -1626,8 +1628,35 @@ bool Session::startConnectionAsync()
                       !m_Preferences->multiController,
                       rtspSessionUrl);
     } catch (const GfeHttpResponseException& e) {
-        emit displayLaunchError(tr("Host returned error: %1").arg(e.toQString()));
-        return false;
+        // If we failed to resume (likely because the game isn't actually running),
+        // try to launch it from scratch.
+        if (resuming) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
+                        "Resume failed (Error %d), trying to launch instead",
+                        e.getStatusCode());
+
+            try {
+                NvHTTP http(m_Computer);
+                http.startApp("launch",
+                              m_Computer->isNvidiaServerSoftware,
+                              m_App.id, &m_StreamConfig,
+                              enableGameOptimizations,
+                              m_Preferences->playAudioOnHost,
+                              m_InputHandler->getAttachedGamepadMask(),
+                              !m_Preferences->multiController,
+                              rtspSessionUrl);
+            } catch (const GfeHttpResponseException& e2) {
+                emit displayLaunchError(tr("Host returned error: %1").arg(e2.toQString()));
+                return false;
+            } catch (const QtNetworkReplyException& e2) {
+                emit displayLaunchError(e2.toQString());
+                return false;
+            }
+        }
+        else {
+            emit displayLaunchError(tr("Host returned error: %1").arg(e.toQString()));
+            return false;
+        }
     } catch (const QtNetworkReplyException& e) {
         emit displayLaunchError(e.toQString());
         return false;
