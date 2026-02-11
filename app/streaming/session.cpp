@@ -585,7 +585,8 @@ Session::Session(NvComputer* computer, NvApp& app, StreamingPreferences *prefere
       m_OpusDecoder(nullptr),
       m_AudioRenderer(nullptr),
       m_AudioSampleCount(0),
-      m_DropAudioEndTime(0)
+      m_DropAudioEndTime(0),
+      m_ClipboardManager(nullptr)
 {
 }
 
@@ -1981,6 +1982,9 @@ void Session::exec()
     // (m_UnexpectedTermination is set back to true).
     m_UnexpectedTermination = false;
 
+    // Start clipboard synchronization
+    m_ClipboardManager = new ClipboardManager(m_Computer, nullptr);
+
     // Start rich presence to indicate we're in game
     RichPresenceManager presence(*m_Preferences, m_App.name);
 
@@ -2079,12 +2083,18 @@ void Session::exec()
                     m_AudioMuted = true;
                 }
                 m_InputHandler->notifyFocusLost();
+                if (m_ClipboardManager) {
+                    m_ClipboardManager->requestSyncFromHost();
+                }
                 break;
             case SDL_WINDOWEVENT_FOCUS_GAINED:
                 if (m_Preferences->muteOnFocusLoss) {
                     m_AudioMuted = false;
                 }
                 m_InputHandler->notifyFocusGained();
+                if (m_ClipboardManager) {
+                    m_ClipboardManager->requestSyncToHost();
+                }
                 break;
             case SDL_WINDOWEVENT_LEAVE:
                 m_InputHandler->notifyMouseLeave();
@@ -2338,6 +2348,10 @@ void Session::exec()
     }
 
 DispatchDeferredCleanup:
+    // Stop clipboard synchronization
+    delete m_ClipboardManager;
+    m_ClipboardManager = nullptr;
+
     // Switch back to synchronous logging mode
     StreamUtils::exitAsyncLoggingMode();
 
