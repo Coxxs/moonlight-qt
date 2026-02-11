@@ -5,6 +5,7 @@ import QtQuick.Window 2.2
 import SdlGamepadKeyNavigation 1.0
 import Session 1.0
 import SystemProperties 1.0
+import AppModel 1.0
 
 Item {
     property Session session
@@ -13,6 +14,9 @@ Item {
                                            qsTr("Starting %1...").arg(appName)
     property bool isResume : false
     property bool quitAfter : false
+    property AppModel appModel
+    property int appIndex
+    property bool isRestarting : false
 
     function stageStarting(stage)
     {
@@ -59,8 +63,30 @@ Item {
         window.visible = true
     }
 
+    function sessionRestartRequested()
+    {
+        isRestarting = true
+    }
+
     function sessionFinished(portTestResult)
     {
+        if (isRestarting && appModel) {
+            isRestarting = false
+
+            window.visible = true
+
+            var component = Qt.createComponent("StreamSegue.qml")
+            var segue = component.createObject(stackView, {
+                                                   "appName": appName,
+                                                   "session": appModel.createSessionForApp(appIndex),
+                                                   "isResume": false,
+                                                   "appModel": appModel,
+                                                   "appIndex": appIndex,
+                                                   "quitAfter": quitAfter
+                                               })
+            stackView.replace(stackView.currentItem, segue, StackView.Immediate)
+            return
+        }
         if (portTestResult !== 0 && portTestResult !== -1 && streamSegueErrorDialog.text) {
             streamSegueErrorDialog.text += "\n\n" + qsTr("This PC's Internet connection is blocking Moonlight. Streaming over the Internet may not work while connected to this network.")
         }
@@ -120,6 +146,7 @@ Item {
         session.quitStarting.connect(quitStarting)
         session.sessionFinished.connect(sessionFinished)
         session.readyForDeletion.connect(sessionReadyForDeletion)
+        session.sessionRestartRequested.connect(sessionRestartRequested)
 
         // Ensure the SystemProperties async thread is finished,
         // since it may currently be using the SDL video subsystem
