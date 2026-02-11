@@ -143,6 +143,8 @@ signals:
 
     void launchWarningsChanged();
 
+    void sessionRestartRequested();
+
 private:
     void exec();
 
