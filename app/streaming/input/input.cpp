@@ -9,6 +9,11 @@
 #include <QDir>
 #include <QGuiApplication>
 
+#ifdef Q_OS_WIN32
+#include <SDL_syswm.h>
+#include <imm.h>
+#endif
+
 SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs, int streamWidth, int streamHeight)
     : m_MultiController(prefs.multiController),
       m_GamepadMouse(prefs.gamepadMouse),
@@ -305,6 +310,16 @@ void SdlInputHandler::notifyFocusLost()
 
 void SdlInputHandler::notifyFocusGained()
 {
+#ifdef Q_OS_WIN32
+    // Disable IME on the streaming window to prevent host IME popup
+    // when typing in the guest. SDL2-compat's SDL_StopTextInput() doesn't
+    // reliably disable IME through the SDL3 compatibility layer.
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (SDL_GetWindowWMInfo(m_Window, &info) && info.subsystem == SDL_SYSWM_WINDOWS) {
+        ImmAssociateContext(info.info.win.window, NULL);
+    }
+#endif
 }
 
 bool SdlInputHandler::isCaptureActive()
