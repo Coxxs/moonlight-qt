@@ -106,6 +106,7 @@ void Session::clConnectionTerminated(int errorCode)
     // Display the termination dialog if this was not intended
     switch (errorCode) {
     case ML_ERROR_GRACEFUL_TERMINATION:
+        emit s_ActiveSession->sessionRestartRequested();
         break;
 
     case ML_ERROR_NO_VIDEO_TRAFFIC:
