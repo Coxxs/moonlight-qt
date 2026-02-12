@@ -26,6 +26,19 @@
 #ifdef Q_OS_WIN32
 #include <SDL_syswm.h>
 #include <dwmapi.h>
+
+// HACK: Intercept maximize events to toggle fullscreen mode directly
+static WNDPROC g_OriginalWndProc = nullptr;
+static Uint32 g_WindowID = 0;
+
+static LRESULT CALLBACK MaximizeInterceptorWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    if (msg == WM_SYSCOMMAND && (wParam & 0xFFF0) == SC_MAXIMIZE) {
+        Session::get()->toggleFullscreen();
+        return 0;
+    }
+    return CallWindowProc(g_OriginalWndProc, hwnd, msg, wParam, lParam);
+}
 #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE_OLD
 #define DWMWA_USE_IMMERSIVE_DARK_MODE_OLD 19
 #endif
@@ -1915,6 +1928,16 @@ void Session::exec()
 
     // HACK: Remove once proper Dark Mode support lands in SDL
 #ifdef Q_OS_WIN32
+    {
+        SDL_SysWMinfo info;
+        SDL_VERSION(&info.version);
+
+        if (SDL_GetWindowWMInfo(m_Window, &info) && info.subsystem == SDL_SYSWM_WINDOWS) {
+            g_WindowID = SDL_GetWindowID(m_Window);
+            g_OriginalWndProc = (WNDPROC)SetWindowLongPtr(info.info.win.window, GWLP_WNDPROC, (LONG_PTR)MaximizeInterceptorWndProc);
+        }
+    }
+
     if (m_QtWindow != nullptr) {
         BOOL darkModeEnabled;
 
@@ -2331,6 +2354,21 @@ void Session::exec()
             break;
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:
+            // Double-click at top of screen in fullscreen + absolute mouse mode exits fullscreen
+            if (event.type == SDL_MOUSEBUTTONDOWN &&
+                event.button.button == SDL_BUTTON_LEFT &&
+                event.button.clicks == 2 &&
+                m_InputHandler->isAbsoluteMouseMode() &&
+                (SDL_GetWindowFlags(m_Window) & m_FullScreenFlag)) {
+                int windowHeight;
+                SDL_GetWindowSize(m_Window, nullptr, &windowHeight);
+                if (event.button.y <= (windowHeight / 80)) {
+                    toggleFullscreen();
+                    SDL_RestoreWindow(m_Window);
+                    m_InputHandler->setCaptureActive(false);
+                    break;
+                }
+            }
             presence.runCallbacks();
             m_InputHandler->handleMouseButtonEvent(&event.button);
             break;

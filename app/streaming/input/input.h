@@ -148,6 +148,8 @@ public:
 
     bool isMouseInVideoRegion(int mouseX, int mouseY, int windowWidth = -1, int windowHeight = -1);
 
+    bool isAbsoluteMouseMode();
+
     void updateKeyboardGrabState();
 
     void updatePointerRegionLock();
