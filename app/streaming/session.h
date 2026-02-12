@@ -126,6 +126,8 @@ public:
 
     void setShouldExit(bool quitHostApp = false);
 
+    void toggleFullscreen();
+
 signals:
     void stageStarting(QString stage);
 
@@ -167,8 +169,6 @@ private:
 
     void getWindowDimensions(int& x, int& y,
                              int& width, int& height);
-
-    void toggleFullscreen();
 
     void notifyMouseEmulationMode(bool enabled);
 

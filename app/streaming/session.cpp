@@ -22,6 +22,23 @@
 #define ICON_SIZE 64
 #endif
 
+#ifdef Q_OS_WIN32
+#include <SDL_syswm.h>
+
+// HACK: Intercept maximize events to toggle fullscreen mode directly
+static WNDPROC g_OriginalWndProc = nullptr;
+static Uint32 g_WindowID = 0;
+
+static LRESULT CALLBACK MaximizeInterceptorWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    if (msg == WM_SYSCOMMAND && (wParam & 0xFFF0) == SC_MAXIMIZE) {
+        Session::get()->toggleFullscreen();
+        return 0;
+    }
+    return CallWindowProc(g_OriginalWndProc, hwnd, msg, wParam, lParam);
+}
+#endif
+
 #define SDL_CODE_FLUSH_WINDOW_EVENT_BARRIER 100
 #define SDL_CODE_GAMECONTROLLER_RUMBLE 101
 #define SDL_CODE_GAMECONTROLLER_RUMBLE_TRIGGERS 102
@@ -1907,6 +1924,18 @@ void Session::exec()
         }
     }
 
+#ifdef Q_OS_WIN32
+    {
+        SDL_SysWMinfo info;
+        SDL_VERSION(&info.version);
+
+        if (SDL_GetWindowWMInfo(m_Window, &info) && info.subsystem == SDL_SYSWM_WINDOWS) {
+            g_WindowID = SDL_GetWindowID(m_Window);
+            g_OriginalWndProc = (WNDPROC)SetWindowLongPtr(info.info.win.window, GWLP_WNDPROC, (LONG_PTR)MaximizeInterceptorWndProc);
+        }
+    }
+#endif
+
     m_InputHandler->setWindow(m_Window);
 
     QSvgRenderer svgIconRenderer(QString(":/res/moonlight.svg"));
@@ -2292,6 +2321,14 @@ void Session::exec()
             break;
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:
+            // Hold right mouse button + click scroll wheel to toggle fullscreen
+            if (event.type == SDL_MOUSEBUTTONDOWN &&
+                event.button.button == SDL_BUTTON_MIDDLE &&
+                (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON(SDL_BUTTON_RIGHT))) {
+                toggleFullscreen();
+                break;
+            }
+
             presence.runCallbacks();
             m_InputHandler->handleMouseButtonEvent(&event.button);
             break;
