@@ -2354,21 +2354,14 @@ void Session::exec()
             break;
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:
-            // Double-click at top of screen in fullscreen + absolute mouse mode exits fullscreen
+            // Hold right mouse button + click scroll wheel to toggle fullscreen
             if (event.type == SDL_MOUSEBUTTONDOWN &&
-                event.button.button == SDL_BUTTON_LEFT &&
-                event.button.clicks == 2 &&
-                m_InputHandler->isAbsoluteMouseMode() &&
-                (SDL_GetWindowFlags(m_Window) & m_FullScreenFlag)) {
-                int windowHeight;
-                SDL_GetWindowSize(m_Window, nullptr, &windowHeight);
-                if (event.button.y <= (windowHeight / 80)) {
-                    toggleFullscreen();
-                    SDL_RestoreWindow(m_Window);
-                    m_InputHandler->setCaptureActive(false);
-                    break;
-                }
+                event.button.button == SDL_BUTTON_MIDDLE &&
+                (SDL_GetMouseState(nullptr, nullptr) & SDL_BUTTON(SDL_BUTTON_RIGHT))) {
+                toggleFullscreen();
+                break;
             }
+
             presence.runCallbacks();
             m_InputHandler->handleMouseButtonEvent(&event.button);
             break;
