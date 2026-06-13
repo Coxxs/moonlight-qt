@@ -247,19 +247,7 @@ void SystemProperties::refreshDisplays()
                             desktopMode.w, desktopMode.h);
             }
 
-            // Start at desktop mode and work our way up
             bestMode = desktopMode;
-            int numDisplayModes = SDL_GetNumDisplayModes(displayIndex);
-            for (int i = 0; i < numDisplayModes; i++) {
-                SDL_DisplayMode mode;
-                if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
-                    if (mode.w == desktopMode.w && mode.h == desktopMode.h) {
-                        if (mode.refresh_rate > bestMode.refresh_rate) {
-                            bestMode = mode;
-                        }
-                    }
-                }
-            }
 
             // Try to normalize values around our our standard refresh rates.
             // Some displays/OSes report values that are slightly off.
