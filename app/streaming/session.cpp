@@ -1419,7 +1419,7 @@ void Session::getWindowDimensions(int& x, int& y,
 
 void Session::updateOptimalWindowDisplayMode()
 {
-    SDL_DisplayMode desktopMode, bestMode, mode;
+    SDL_DisplayMode desktopMode, bestMode;
     int displayIndex = SDL_GetWindowDisplayIndex(m_Window);
 
     // Try the current display mode first. On macOS, this will be the normal
@@ -1455,50 +1455,20 @@ void Session::updateOptimalWindowDisplayMode()
     bestMode = desktopMode;
     bestMode.refresh_rate = 0;
     if (!matchVideo) {
-        // Start with the native desktop resolution and try to find
-        // the highest refresh rate that our stream FPS evenly divides.
-        int numDisplayModes = SDL_GetNumDisplayModes(displayIndex);
-        for (int i = 0; i < numDisplayModes; i++) {
-            if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
-                if (mode.w == desktopMode.w && mode.h == desktopMode.h &&
-                    mode.refresh_rate % m_StreamConfig.fps == 0) {
-                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                                "Found display mode with desktop resolution: %dx%dx%d",
-                                mode.w, mode.h, mode.refresh_rate);
-                    if (mode.refresh_rate > bestMode.refresh_rate) {
-                        bestMode = mode;
-                    }
-                }
-            }
+        // Check if the desktop mode's refresh rate is compatible with the stream FPS.
+        // We no longer enumerate all display modes because SDL_GetNumDisplayModes/
+        // SDL_GetDisplayMode are extremely slow in SDL3.
+        if (desktopMode.refresh_rate % m_StreamConfig.fps == 0) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "Using desktop display mode: %dx%dx%d",
+                        desktopMode.w, desktopMode.h, desktopMode.refresh_rate);
+            bestMode = desktopMode;
         }
     }
 
-    // If we didn't find a mode that matched the current resolution and
-    // had a high enough refresh rate, start looking for lower resolution
-    // modes that can meet the required refresh rate and minimum video
-    // resolution. We will also try to pick a display mode that matches
-    // aspect ratio closest to the video stream.
-    if (bestMode.refresh_rate == 0) {
-        float bestModeAspectRatio = 0;
-        float videoAspectRatio = (float)m_ActiveVideoWidth / (float)m_ActiveVideoHeight;
-        int numDisplayModes = SDL_GetNumDisplayModes(displayIndex);
-        for (int i = 0; i < numDisplayModes; i++) {
-            if (SDL_GetDisplayMode(displayIndex, i, &mode) == 0) {
-                float modeAspectRatio = (float)mode.w / (float)mode.h;
-                if (mode.w >= m_ActiveVideoWidth && mode.h >= m_ActiveVideoHeight &&
-                        mode.refresh_rate % m_StreamConfig.fps == 0) {
-                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                                "Found display mode with video resolution: %dx%dx%d",
-                                mode.w, mode.h, mode.refresh_rate);
-                    if (mode.refresh_rate >= bestMode.refresh_rate &&
-                            (bestModeAspectRatio == 0 || fabs(videoAspectRatio - modeAspectRatio) <= fabs(videoAspectRatio - bestModeAspectRatio))) {
-                        bestMode = mode;
-                        bestModeAspectRatio = modeAspectRatio;
-                    }
-                }
-            }
-        }
-    }
+    // If the desktop mode's refresh rate is not compatible, just use it as-is.
+    // We no longer enumerate modes to find lower resolution alternatives because
+    // SDL_GetNumDisplayModes/SDL_GetDisplayMode are extremely slow in SDL3.
 
     if (bestMode.refresh_rate == 0) {
         // We may find no match if the user has moved a 120 FPS
@@ -2221,8 +2191,8 @@ void Session::exec()
                     // and that we apply any V-Sync disablement rules that may be needed for
                     // this display.
                     SDL_DisplayMode oldMode, newMode;
-                    if (SDL_GetCurrentDisplayMode(currentDisplayIndex, &oldMode) < 0 ||
-                            SDL_GetCurrentDisplayMode(newDisplayIndex, &newMode) < 0 ||
+                    if (SDL_GetDesktopDisplayMode(currentDisplayIndex, &oldMode) < 0 ||
+                            SDL_GetDesktopDisplayMode(newDisplayIndex, &newMode) < 0 ||
                             oldMode.refresh_rate != newMode.refresh_rate) {
                         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                                     "Forcing renderer recreation due to refresh rate change between displays");

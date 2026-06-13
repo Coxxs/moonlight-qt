@@ -181,10 +181,10 @@ int StreamUtils::getDisplayRefreshRate(SDL_Window* window)
         }
     }
     else {
-        // Use the current display mode for windowed and borderless
-        if (SDL_GetCurrentDisplayMode(displayIndex, &mode) != 0) {
+        // Use the desktop display mode for windowed and borderless
+        if (SDL_GetDesktopDisplayMode(displayIndex, &mode) != 0) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                         "SDL_GetCurrentDisplayMode() failed: %s",
+                         "SDL_GetDesktopDisplayMode() failed: %s",
                          SDL_GetError());
 
             // Assume 60 Hz
@@ -317,16 +317,15 @@ bool StreamUtils::getNativeDesktopMode(int displayIndex, SDL_DisplayMode* mode, 
     // Special case for probing for notched displays prior to video subsystem initialization
     // in Session::initialize() for Darwin only!
     if (SDL_WasInit(SDL_INIT_VIDEO)) {
-        // Now find the SDL mode that matches the CG native mode
-        for (int i = 0; i < SDL_GetNumDisplayModes(displayIndex); i++) {
-            SDL_DisplayMode thisMode;
-            if (SDL_GetDisplayMode(displayIndex, i, &thisMode) == 0) {
-                if (thisMode.w == mode->w && thisMode.h == mode->h &&
-                    thisMode.refresh_rate >= mode->refresh_rate) {
-                    *mode = thisMode;
-                    break;
-                }
-            }
+        // Use the desktop display mode to fill in the remaining fields (format, refresh_rate).
+        // We no longer enumerate all display modes because SDL_GetNumDisplayModes/
+        // SDL_GetDisplayMode are extremely slow in SDL3.
+        SDL_DisplayMode desktopMode;
+        if (SDL_GetDesktopDisplayMode(displayIndex, &desktopMode) == 0) {
+            // Preserve the native resolution from CG, but use the desktop mode's other fields
+            desktopMode.w = mode->w;
+            desktopMode.h = mode->h;
+            *mode = desktopMode;
         }
     }
 #else
@@ -342,9 +341,11 @@ bool StreamUtils::getNativeDesktopMode(int displayIndex, SDL_DisplayMode* mode, 
     // the first mode on Wayland will get the native resolution without the scaling factor
     // (and macOS is handled in the #ifdef above).
     if (!strcmp(SDL_GetCurrentVideoDriver(), "wayland")) {
-        if (SDL_GetDisplayMode(displayIndex, 0, mode) != 0) {
+        // SDL_GetDisplayMode() is extremely slow in SDL3, so use
+        // SDL_GetDesktopDisplayMode() to get the native resolution instead.
+        if (SDL_GetDesktopDisplayMode(displayIndex, mode) != 0) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                         "SDL_GetDisplayMode() failed: %s",
+                         "SDL_GetDesktopDisplayMode() failed: %s",
                          SDL_GetError());
             return false;
         }
