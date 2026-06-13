@@ -9,6 +9,9 @@
 #include <QUrl>
 #include <QUuid>
 #include <QEventLoop>
+#include <QGuiApplication>
+#include <QClipboard>
+#include <QMimeData>
 
 #include <SDL.h>
 
@@ -161,6 +164,14 @@ public:
     // Called from main thread on SDL_WINDOWEVENT_FOCUS_LOST
     void requestSyncFromHost()
     {
+        const QMimeData* mimeData = QGuiApplication::clipboard()->mimeData();
+        if (mimeData) {
+            if (mimeData->hasImage() || mimeData->hasUrls()) {
+                // Do not overwrite the clipboard if it contains a file or image
+                return;
+            }
+        }
+        
         QMetaObject::invokeMethod(m_Worker, "syncFromHost", Qt::QueuedConnection);
     }
 
