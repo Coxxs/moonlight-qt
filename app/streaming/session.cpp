@@ -1543,6 +1543,24 @@ void Session::toggleFullscreen()
     // Actually enter/leave fullscreen
     SDL_SetWindowFullscreen(m_Window, fullScreen ? m_FullScreenFlag : 0);
 
+#ifdef Q_OS_WIN32
+    // HACK: After exiting fullscreen on Windows, the non-client area (title bar)
+    // may not respond to mouse input if a mouse button was held during the transition
+    // (e.g. right-click + middle-click to toggle fullscreen). We force Windows to
+    // reactivate the non-client area to restore proper hit-testing.
+    if (!fullScreen) {
+        SDL_RaiseWindow(m_Window);
+
+        SDL_SysWMinfo info;
+        SDL_VERSION(&info.version);
+        if (SDL_GetWindowWMInfo(m_Window, &info)) {
+            // Force the non-client area to redraw in the active state,
+            // which fixes the title bar not responding to mouse input.
+            SendMessage(info.info.win.window, WM_NCACTIVATE, TRUE, 0);
+        }
+    }
+#endif
+
 #ifdef Q_OS_DARWIN
     // SDL on macOS has a bug that causes the window size to be reset to crazy
     // large dimensions when exiting out of true fullscreen mode. We can work
