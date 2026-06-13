@@ -226,6 +226,9 @@ Item {
 
                 // Allow an extra 500 ms for the tooltip's fade-out animation to finish
                 startSessionTimer.interval = toast.timeout + 500;
+
+                // MOD: Cap startup delay to a maximum of 300 ms
+                startSessionTimer.interval = Math.min(startSessionTimer.interval, 300);
             }
 
             // Start the timer to wait for toasts (or start the session immediately)
