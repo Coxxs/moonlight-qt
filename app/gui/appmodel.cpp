@@ -1,5 +1,17 @@
 #include "appmodel.h"
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QStandardPaths>
+
+#ifdef Q_OS_WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+#include <shlobj.h>
+#endif
+
 AppModel::AppModel(QObject *parent)
     : QAbstractListModel(parent)
 {
@@ -116,6 +128,123 @@ QHash<int, QByteArray> AppModel::roleNames() const
 void AppModel::quitRunningApp()
 {
     m_ComputerManager->quitRunningApp(m_Computer);
+}
+
+static QString sanitizedShortcutName(const QString& name)
+{
+    QString sanitized = name;
+    for (int i = 0; i < sanitized.size(); i++) {
+        const QChar ch = sanitized.at(i);
+        if (ch.unicode() < 32 || QStringLiteral("<>:\"/\\|?*").contains(ch)) {
+            sanitized[i] = QLatin1Char('_');
+        }
+    }
+    sanitized = sanitized.trimmed();
+    return sanitized.isEmpty() ? QStringLiteral("Moonlight") : sanitized;
+}
+
+static QString quoteShortcutArg(const QString& arg)
+{
+    if (!arg.contains(QLatin1Char(' ')) && !arg.contains(QLatin1Char('\t')) &&
+            !arg.contains(QLatin1Char('"')) && !arg.contains(QLatin1Char('\''))) {
+        return arg;
+    }
+
+    QString escaped = arg;
+    escaped.replace(QLatin1Char('"'), QLatin1Char('\''));
+    return QLatin1Char('"') + escaped + QLatin1Char('"');
+}
+
+static QString moonlightShortcutTarget()
+{
+    const QByteArray appImage = qgetenv("APPIMAGE");
+    if (!appImage.isEmpty()) {
+        return QString::fromLocal8Bit(appImage);
+    }
+    return QCoreApplication::applicationFilePath();
+}
+
+bool AppModel::createDesktopShortcut(int appIndex)
+{
+    Q_ASSERT(appIndex < m_VisibleApps.count());
+    const NvApp app = m_VisibleApps.at(appIndex);
+
+    const QString desktopDir = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+    if (desktopDir.isEmpty()) {
+        return false;
+    }
+
+    const QString hostId = m_Computer->uuid.isEmpty() ? m_Computer->name : m_Computer->uuid;
+    const QString displayName = app.name + QStringLiteral(" (") + m_Computer->name + QLatin1Char(')');
+    const QString arguments = QStringLiteral("stream ") + quoteShortcutArg(hostId) +
+            QLatin1Char(' ') + quoteShortcutArg(app.name);
+    const QString target = moonlightShortcutTarget();
+    const QString fileBase = QDir(desktopDir).filePath(sanitizedShortcutName(displayName));
+
+#ifdef Q_OS_WIN32
+    const QString linkPath = fileBase + QStringLiteral(".lnk");
+    IShellLinkW* shellLink = nullptr;
+    HRESULT hr = CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+                                  IID_IShellLinkW, reinterpret_cast<void**>(&shellLink));
+    if (FAILED(hr)) {
+        return false;
+    }
+
+    const QString nativeTarget = QDir::toNativeSeparators(target);
+    const QString workingDir = QDir::toNativeSeparators(QFileInfo(target).absolutePath());
+    shellLink->SetPath(reinterpret_cast<LPCWSTR>(nativeTarget.utf16()));
+    shellLink->SetArguments(reinterpret_cast<LPCWSTR>(arguments.utf16()));
+    shellLink->SetWorkingDirectory(reinterpret_cast<LPCWSTR>(workingDir.utf16()));
+    shellLink->SetDescription(reinterpret_cast<LPCWSTR>(displayName.utf16()));
+    shellLink->SetIconLocation(reinterpret_cast<LPCWSTR>(nativeTarget.utf16()), 0);
+
+    IPersistFile* persistFile = nullptr;
+    hr = shellLink->QueryInterface(IID_IPersistFile, reinterpret_cast<void**>(&persistFile));
+    if (SUCCEEDED(hr)) {
+        hr = persistFile->Save(reinterpret_cast<LPCWSTR>(QDir::toNativeSeparators(linkPath).utf16()), TRUE);
+        persistFile->Release();
+    }
+    shellLink->Release();
+    return SUCCEEDED(hr);
+#elif defined(Q_OS_DARWIN)
+    const QString linkPath = fileBase + QStringLiteral(".command");
+    QFile file(linkPath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        return false;
+    }
+    const QByteArray script = QByteArrayLiteral("#!/bin/sh\nexec ") +
+            quoteShortcutArg(target).toUtf8() + ' ' + arguments.toUtf8() + '\n';
+    if (file.write(script) != script.size()) {
+        return false;
+    }
+    file.close();
+    return file.setPermissions(file.permissions() | QFileDevice::ExeOwner | QFileDevice::ExeGroup | QFileDevice::ExeOther);
+#else
+    const QString linkPath = fileBase + QStringLiteral(".desktop");
+    QString execLine;
+    const QByteArray flatpakId = qgetenv("FLATPAK_ID");
+    if (!flatpakId.isEmpty()) {
+        execLine = QStringLiteral("flatpak run ") + QString::fromUtf8(flatpakId) +
+                QLatin1Char(' ') + arguments;
+    }
+    else {
+        execLine = quoteShortcutArg(target) + QLatin1Char(' ') + arguments;
+    }
+
+    QFile file(linkPath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        return false;
+    }
+    const QByteArray contents =
+            QByteArrayLiteral("[Desktop Entry]\nType=Application\nName=") + displayName.toUtf8() +
+            QByteArrayLiteral("\nExec=") + execLine.toUtf8() +
+            QByteArrayLiteral("\nIcon=moonlight\nTerminal=false\nCategories=Game;\n");
+    if (file.write(contents) != contents.size()) {
+        return false;
+    }
+    file.close();
+    return file.setPermissions(file.permissions() | QFileDevice::ExeOwner | QFileDevice::ExeGroup | QFileDevice::ExeOther);
+#endif
 }
 
 bool AppModel::isAppCurrentlyVisible(const NvApp& app)
