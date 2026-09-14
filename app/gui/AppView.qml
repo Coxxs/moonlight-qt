@@ -5,6 +5,7 @@ import QtQuick.Controls.Material 2.2
 import AppModel 1.0
 import ComputerManager 1.0
 import SdlGamepadKeyNavigation 1.0
+import SystemProperties 1.0
 
 CenteredGridView {
     property int computerIndex
@@ -319,6 +320,21 @@ CenteredGridView {
                     ToolTip.visible: hovered
                 }
                 NavigableMenuItem {
+                    text: qsTr("Create Desktop Shortcut")
+                    visible: SystemProperties.hasDesktopEnvironment
+                    onTriggered: {
+                        if (!appModel.createDesktopShortcut(model.index)) {
+                            shortcutErrorDialog.appName = model.name
+                            shortcutErrorDialog.open()
+                        }
+                    }
+
+                    ToolTip.text: qsTr("Create a shortcut on your desktop that launches this app directly.")
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 3000
+                    ToolTip.visible: hovered
+                }
+                NavigableMenuItem {
                     checkable: true
                     checked: model.hidden
                     text: qsTr("Hide Game")
@@ -345,6 +361,13 @@ CenteredGridView {
             verticalAlignment: Text.AlignVCenter
             wrapMode: Text.Wrap
         }
+    }
+
+    NavigableMessageDialog {
+        id: shortcutErrorDialog
+        property string appName : ""
+        text: qsTr("Unable to create a desktop shortcut for %1.").arg(appName)
+        standardButtons: Dialog.Ok
     }
 
     NavigableMessageDialog {

@@ -41,6 +41,8 @@ public:
 
     Q_INVOKABLE void setAppDirectLaunch(int appIndex, bool directLaunch);
 
+    Q_INVOKABLE bool createDesktopShortcut(int appIndex);
+
     QVariant data(const QModelIndex &index, int role) const override;
 
     int rowCount(const QModelIndex &parent) const override;
