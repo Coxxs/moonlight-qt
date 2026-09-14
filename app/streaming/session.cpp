@@ -615,6 +615,11 @@ Session::~Session()
     SDL_DestroyMutex(m_DecoderLock);
 }
 
+Session* Session::createRestartSession()
+{
+    return new Session(m_Computer, m_App, m_Preferences);
+}
+
 bool Session::initialize(QQuickWindow* qtWindow)
 {
     m_QtWindow = qtWindow;

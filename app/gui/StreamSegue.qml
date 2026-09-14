@@ -70,7 +70,7 @@ Item {
 
     function sessionFinished(portTestResult)
     {
-        if (isRestarting && appModel) {
+        if (isRestarting) {
             isRestarting = false
 
             window.visible = true
@@ -78,7 +78,7 @@ Item {
             var component = Qt.createComponent("StreamSegue.qml")
             var segue = component.createObject(stackView, {
                                                    "appName": appName,
-                                                   "session": appModel.createSessionForApp(appIndex),
+                                                   "session": appModel ? appModel.createSessionForApp(appIndex) : session.createRestartSession(),
                                                    "isResume": false,
                                                    "appModel": appModel,
                                                    "appIndex": appIndex,
