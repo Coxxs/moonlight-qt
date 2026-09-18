@@ -667,6 +667,26 @@
 <context>
     <name>SettingsView</name>
     <message>
+        <source>Additional buffering</source>
+        <translation>额外缓冲时间</translation>
+    </message>
+    <message>
+        <source>Additional buffering in milliseconds</source>
+        <translation>额外缓冲时间，单位为毫秒</translation>
+    </message>
+    <message>
+        <source>Adds buffering for audio and video to absorb brief network jitter. Higher values increase input latency. 0 adds no extra buffering. Takes effect on the next stream.</source>
+        <translation>为音频和视频增加缓冲，以缓解短时网络抖动。数值越大，操作响应越慢。0 表示不增加额外缓冲。下次串流时生效。</translation>
+    </message>
+    <message>
+        <source>Enter a whole number from 0 to 100.</source>
+        <translation>请输入 0 至 100 之间的整数。</translation>
+    </message>
+    <message>
+        <source>ms</source>
+        <translation>ms</translation>
+    </message>
+    <message>
         <location filename="../gui/SettingsView.qml" line="13"/>
         <source>Settings</source>
         <translation>设置</translation>

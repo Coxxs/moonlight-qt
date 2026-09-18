@@ -6,6 +6,7 @@
 #include <QQueue>
 #include <QMutex>
 #include <QWaitCondition>
+#include "playoutclock.h"
 
 // The maximum number of frames pacer will ever hold is:
 // - 3 frames in the pacing queue
@@ -42,11 +43,15 @@ public:
     void signalVsync();
 
     void renderOnMainThread();
+    int extraFrames() const { return m_ExtraFrames + (m_ExtraBufferingMs > 0 && m_VsyncSource != nullptr ? 3 : 0); }
 
 private:
     static int vsyncThread(void* context);
 
     static int renderThread(void* context);
+    static Uint32 wakeMainThread(Uint32 interval, void* context);
+    unsigned long frameWaitMs(AVFrame* frame) const;
+    void dropExpiredFrames();
 
     void handleVsync(int timeUntilNextVsyncMillis);
 
@@ -75,4 +80,8 @@ private:
     int m_DisplayFps;
     PVIDEO_STATS m_VideoStats;
     int m_RendererAttributes;
+    int m_ExtraBufferingMs = 0;
+    int m_ExtraFrames = 0;
+    SDL_TimerID m_RenderTimer = 0;
+    PlayoutClock m_PlayoutClock;
 };
