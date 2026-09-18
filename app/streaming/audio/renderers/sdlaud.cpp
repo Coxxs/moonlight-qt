@@ -1,4 +1,5 @@
 #include "sdl.h"
+#include "settings/streamingpreferences.h"
 
 #include <Limelight.h>
 
@@ -19,6 +20,8 @@ SdlAudioRenderer::SdlAudioRenderer()
 bool SdlAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* opusConfig)
 {
     SDL_AudioSpec want, have;
+    m_ExtraBufferingMs = qBound(0, StreamingPreferences::get()->extraBufferingMs, 100);
+    m_Prefilling = m_ExtraBufferingMs > 0;
 
     SDL_zero(want);
     want.freq = opusConfig->sampleRate;
@@ -67,7 +70,7 @@ bool SdlAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* 
                 SDL_GetCurrentAudioDriver());
 
     // Start playback
-    SDL_PauseAudioDevice(m_AudioDevice, 0);
+    SDL_PauseAudioDevice(m_AudioDevice, m_Prefilling ? 1 : 0);
 
     return true;
 }
@@ -102,8 +105,15 @@ bool SdlAudioRenderer::submitAudio(int bytesWritten)
 
     // Don't queue if there's already more than 30 ms of audio data waiting
     // in Moonlight's audio queue.
-    if (LiGetPendingAudioDuration() > 30) {
+    if (LiGetPendingAudioDuration() > 30 + m_ExtraBufferingMs) {
         return true;
+    }
+
+    if (m_ExtraBufferingMs > 0 && !m_Prefilling &&
+            SDL_GetAudioDeviceStatus(m_AudioDevice) == SDL_AUDIO_PLAYING &&
+            SDL_GetQueuedAudioSize(m_AudioDevice) == 0) {
+        SDL_PauseAudioDevice(m_AudioDevice, 1);
+        m_Prefilling = true;
     }
 
     // Provide backpressure on the queue to ensure too many frames don't build up
@@ -117,7 +127,7 @@ bool SdlAudioRenderer::submitAudio(int bytesWritten)
         }
 
         // Only queue more samples where there is 50 ms or less in SDL's queue
-        if (SDL_GetQueuedAudioSize(m_AudioDevice) / m_FrameSize * m_FrameDurationMs <= 50) {
+        if (SDL_GetQueuedAudioSize(m_AudioDevice) / m_FrameSize * m_FrameDurationMs <= 50 + m_ExtraBufferingMs) {
             break;
         }
 
@@ -128,6 +138,15 @@ bool SdlAudioRenderer::submitAudio(int bytesWritten)
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "Failed to queue audio sample: %s",
                      SDL_GetError());
+        if (m_ExtraBufferingMs > 0) {
+            return false;
+        }
+    }
+
+    if (m_Prefilling && SDL_GetQueuedAudioSize(m_AudioDevice) / m_FrameSize * m_FrameDurationMs >=
+            static_cast<Uint32>(m_ExtraBufferingMs)) {
+        m_Prefilling = false;
+        SDL_PauseAudioDevice(m_AudioDevice, 0);
     }
 
     return true;

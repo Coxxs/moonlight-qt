@@ -82,12 +82,14 @@ Flickable {
 
     StackView.onDeactivating: {
         SdlGamepadKeyNavigation.setUiNavMode(false)
+        extraBufferingInput.commitValue()
 
         // Save the prefs so the Session can observe the changes
         StreamingPreferences.save()
     }
 
     Component.onDestruction: {
+        extraBufferingInput.commitValue()
         // Also save preferences on destruction, since we won't get a
         // deactivating callback if the user just closes Moonlight
         StreamingPreferences.save()
@@ -846,6 +848,75 @@ Flickable {
                         ToolTip.timeout: 5000
                         ToolTip.visible: hovered
                         ToolTip.text: qsTr("Frame pacing reduces micro-stutter by delaying frames that come in too early")
+                    }
+                }
+
+                Column {
+                    width: parent.width
+                    spacing: 5
+
+                    Label {
+                        width: parent.width
+                        text: qsTr("Additional buffering")
+                        font.pointSize: 12
+                        wrapMode: Text.WordWrap
+                    }
+
+                    RowLayout {
+                        width: parent.width
+                        spacing: 5
+
+                        TextField {
+                            id: extraBufferingInput
+                            Layout.preferredWidth: 90
+                            Layout.maximumWidth: parent.width - bufferingUnit.implicitWidth - parent.spacing
+                            text: StreamingPreferences.extraBufferingMs.toString()
+                            inputMethodHints: Qt.ImhDigitsOnly
+                            selectByMouse: true
+                            hoverEnabled: true
+                            validator: IntValidator { bottom: 0; top: 100 }
+                            property bool invalidValue: false
+                            Accessible.name: qsTr("Additional buffering in milliseconds")
+                            Accessible.description: ToolTip.text
+
+                            function commitValue() {
+                                if (text.trim().length === 0) {
+                                    text = StreamingPreferences.extraBufferingMs.toString()
+                                    invalidValue = false
+                                } else if (acceptableInput) {
+                                    StreamingPreferences.extraBufferingMs = Number(text)
+                                    text = StreamingPreferences.extraBufferingMs.toString()
+                                    invalidValue = false
+                                } else {
+                                    invalidValue = true
+                                }
+                            }
+
+                            onTextEdited: invalidValue = text.length > 0 && !acceptableInput
+                            onEditingFinished: commitValue()
+                            onActiveFocusChanged: {
+                                if (!activeFocus) commitValue()
+                            }
+                            ToolTip.delay: 1000
+                            ToolTip.timeout: 10000
+                            ToolTip.visible: hovered
+                            ToolTip.text: qsTr("Adds buffering for audio and video to absorb brief network jitter. Higher values increase input latency. 0 adds no extra buffering. Takes effect on the next stream.")
+                        }
+
+                        Label {
+                            id: bufferingUnit
+                            text: qsTr("ms")
+                        }
+
+                        Item { Layout.fillWidth: true }
+                    }
+
+                    Label {
+                        width: parent.width
+                        visible: extraBufferingInput.invalidValue
+                        text: qsTr("Enter a whole number from 0 to 100.")
+                        wrapMode: Text.WordWrap
+                        color: "#d32f2f"
                     }
                 }
 

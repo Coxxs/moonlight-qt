@@ -1,5 +1,6 @@
 #include "pacer.h"
 #include "streaming/streamutils.h"
+#include "settings/streamingpreferences.h"
 
 #ifdef Q_OS_WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -45,6 +46,9 @@ Pacer::Pacer(IFFmpegRenderer* renderer, PVIDEO_STATS videoStats) :
 
 Pacer::~Pacer()
 {
+    if (m_RenderTimer != 0) {
+        SDL_RemoveTimer(m_RenderTimer);
+    }
     m_Stopping = true;
 
     // Stop the V-sync thread
@@ -91,6 +95,15 @@ void Pacer::renderOnMainThread()
     m_FrameQueueLock.lock();
 
     if (!m_RenderQueue.isEmpty()) {
+        unsigned long waitMs = frameWaitMs(m_RenderQueue.head());
+        if (waitMs > 0) {
+            if (m_RenderTimer != 0) {
+                SDL_RemoveTimer(m_RenderTimer);
+            }
+            m_RenderTimer = SDL_AddTimer(waitMs, wakeMainThread, nullptr);
+            m_FrameQueueLock.unlock();
+            return;
+        }
         AVFrame* frame = m_RenderQueue.dequeue();
         m_FrameQueueLock.unlock();
 
@@ -99,6 +112,25 @@ void Pacer::renderOnMainThread()
     else {
         m_FrameQueueLock.unlock();
     }
+}
+
+Uint32 Pacer::wakeMainThread(Uint32, void*)
+{
+    SDL_Event event = {};
+    event.type = SDL_USEREVENT;
+    event.user.code = SDL_CODE_FRAME_READY;
+    SDL_PushEvent(&event);
+    return 0;
+}
+
+unsigned long Pacer::frameWaitMs(AVFrame* frame) const
+{
+    if (m_ExtraBufferingMs == 0) {
+        return 0;
+    }
+    int64_t remainingUs = frame->pkt_dts + m_ExtraBufferingMs * 1000LL -
+            static_cast<int64_t>(LiGetMicroseconds());
+    return remainingUs > 0 ? static_cast<unsigned long>((remainingUs + 999) / 1000) : 0;
 }
 
 int Pacer::vsyncThread(void *context)
@@ -163,6 +195,12 @@ int Pacer::renderThread(void* context)
             break;
         }
 
+        unsigned long waitMs = me->frameWaitMs(me->m_RenderQueue.head());
+        if (waitMs > 0) {
+            me->m_RenderQueueNotEmpty.wait(&me->m_FrameQueueLock, waitMs);
+            me->m_FrameQueueLock.unlock();
+            continue;
+        }
         AVFrame* frame = me->m_RenderQueue.dequeue();
         me->m_FrameQueueLock.unlock();
 
@@ -262,6 +300,8 @@ void Pacer::handleVsync(int timeUntilNextVsyncMillis)
 bool Pacer::initialize(SDL_Window* window, int maxVideoFps, bool enablePacing)
 {
     m_MaxVideoFps = maxVideoFps;
+    m_ExtraBufferingMs = qBound(0, StreamingPreferences::get()->extraBufferingMs, 100);
+    m_ExtraFrames = static_cast<int>((static_cast<int64_t>(maxVideoFps) * m_ExtraBufferingMs + 999) / 1000);
     m_DisplayFps = StreamUtils::getDisplayRefreshRate(window);
     m_RendererAttributes = m_VsyncRenderer->getRendererAttributes();
 
@@ -378,7 +418,9 @@ void Pacer::renderFrame(AVFrame* frame)
     }
 
     // Catch up if we're several frames ahead
-    while (m_RenderQueue.count() > frameDropTarget) {
+    while (m_RenderQueue.count() > frameDropTarget &&
+           (m_ExtraBufferingMs == 0 ||
+            (m_RenderQueue.count() > 1 && frameWaitMs(m_RenderQueue.at(1)) == 0))) {
         AVFrame* frame = m_RenderQueue.dequeue();
 
         // Drop the lock while we call av_frame_free()
@@ -388,13 +430,21 @@ void Pacer::renderFrame(AVFrame* frame)
         m_FrameQueueLock.lock();
     }
 
+    if (m_ExtraBufferingMs > 0 && m_RenderThread == nullptr && !m_RenderQueue.isEmpty()) {
+        if (m_RenderTimer != 0) {
+            SDL_RemoveTimer(m_RenderTimer);
+        }
+        m_RenderTimer = SDL_AddTimer(qMax(1UL, frameWaitMs(m_RenderQueue.head())), wakeMainThread, nullptr);
+    }
+
     m_FrameQueueLock.unlock();
 }
 
 void Pacer::dropFrameForEnqueue(QQueue<AVFrame*>& queue)
 {
-    SDL_assert(queue.size() <= MAX_QUEUED_FRAMES);
-    if (queue.size() == MAX_QUEUED_FRAMES) {
+    int capacity = MAX_QUEUED_FRAMES + (&queue == &m_RenderQueue ? m_ExtraFrames : 0);
+    SDL_assert(queue.size() <= capacity);
+    if (queue.size() == capacity) {
         AVFrame* frame = queue.dequeue();
         av_frame_free(&frame);
     }
