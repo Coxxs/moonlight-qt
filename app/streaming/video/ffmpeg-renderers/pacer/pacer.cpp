@@ -204,8 +204,19 @@ int Pacer::renderThread(void* context)
         me->m_FrameQueueLock.lock();
 
         // Wait for a frame to be ready to render
-        while (!me->m_Stopping && me->m_RenderQueue.isEmpty()) {
-            me->m_RenderQueueNotEmpty.wait(&me->m_FrameQueueLock);
+        while (!me->m_Stopping) {
+            if (me->m_RenderQueue.isEmpty()) {
+                me->m_RenderQueueNotEmpty.wait(&me->m_FrameQueueLock);
+                continue;
+            }
+
+            me->dropExpiredFrames();
+            unsigned long waitMs = me->frameWaitMs(me->m_RenderQueue.head());
+            if (waitMs == 0) {
+                break;
+            }
+
+            me->m_RenderQueueNotEmpty.wait(&me->m_FrameQueueLock, waitMs);
         }
 
         if (me->m_Stopping) {
@@ -214,13 +225,6 @@ int Pacer::renderThread(void* context)
             break;
         }
 
-        me->dropExpiredFrames();
-        unsigned long waitMs = me->frameWaitMs(me->m_RenderQueue.head());
-        if (waitMs > 0) {
-            me->m_RenderQueueNotEmpty.wait(&me->m_FrameQueueLock, waitMs);
-            me->m_FrameQueueLock.unlock();
-            continue;
-        }
         AVFrame* frame = me->m_RenderQueue.dequeue();
         me->m_FrameDeadlines.remove(frame);
         me->m_FrameQueueLock.unlock();
