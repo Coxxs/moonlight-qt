@@ -29,6 +29,8 @@ int main()
     wrapClock.schedule(UINT32_MAX - 899, 1000000, 100);
     auto wrapped = wrapClock.schedule(0, 1010000, 100);
     expect(!wrapped.reset && wrapped.timeUs == 1110000, "32-bit RTP wraparound");
+    expect(wrapClock.deadlineUs(UINT32_MAX - 899) == 1100000,
+           "queued pre-wrap frame retains its deadline after wraparound");
     auto backwards = wrapClock.schedule(UINT32_MAX - 100, 1020000, 100);
     expect(backwards.reset && backwards.timeUs == 1120000, "backward timestamp rebases");
 
@@ -39,7 +41,25 @@ int main()
         auto deadline = cadenceClock.schedule(frameIndex * 1500, elapsedUs, 100);
         expect(!deadline.reset && deadline.timeUs == elapsedUs + 100000,
                "60 FPS conversion does not accumulate rounding drift");
+        expect(cadenceClock.deadlineUs((frameIndex - 1) * 1500) ==
+                   static_cast<int64_t>(frameIndex - 1) * 1500 * 1000 / 90 + 100000,
+               "older queued frame uses the same rounding origin");
     }
+
+    PlayoutClock startupClock;
+    expect(startupClock.schedule(0, 500000, 100).timeUs == 600000,
+           "startup first frame establishes initial deadline");
+    auto startupNext = startupClock.schedule(9000, 510000, 100);
+    expect(!startupNext.reset && startupNext.timeUs == 610000,
+           "startup backlog cannot impose more than requested buffering on new frames");
+    expect(startupClock.deadlineUs(0) == 510000 && startupClock.deadlineUs(9000) == 610000,
+           "queued timestamps use the corrected timeline without per-frame updates");
+    auto startupLate = startupClock.schedule(10530, 597000, 100);
+    expect(!startupLate.reset && startupLate.timeUs == 627000 && startupClock.deadlineUs(0) == 510000,
+           "70 ms jitter after startup correction does not move the timeline");
+    auto startupRecovered = startupClock.schedule(12060, 598000, 100);
+    expect(!startupRecovered.reset && startupRecovered.timeUs == 644000,
+           "burst recovery preserves media spacing");
 
     PlayoutClock zeroClock;
     expect(zeroClock.schedule(0, 123000, 0).timeUs == 123000, "zero delay arithmetic");
