@@ -149,11 +149,20 @@ bool SdlAudioRenderer::submitAudio(int bytesWritten)
     }
 
     // If the queue ran completely dry, the jitter buffer is gone and every
-    // small arrival gap from here on would be audible. Rebuild it once with a
-    // single block of silence rather than stuttering through many tiny gaps.
-    if (m_ExtraBufferingMs > 0 && SDL_GetQueuedAudioSize(m_AudioDevice) == 0) {
+    // small arrival gap from here on would be audible. Whether to rebuild it
+    // depends on why it drained:
+    //  - Delayed packets arrive as a burst once the network recovers. That
+    //    burst refills the queue on its own (up to the backpressure limit), so
+    //    inserting silence here would only skip real audio. Pending audio in
+    //    Moonlight's queue is the sign a burst is in flight.
+    //  - Lost packets never arrive, so nothing would refill the queue. Rebuild
+    //    it once with a single block of silence rather than stuttering through
+    //    many tiny gaps from here on.
+    if (m_ExtraBufferingMs > 0 &&
+            SDL_GetQueuedAudioSize(m_AudioDevice) == 0 &&
+            LiGetPendingAudioDuration() == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "Audio underrun; rebuilding %d ms jitter buffer",
+                    "Audio underrun with no pending audio; rebuilding %d ms jitter buffer",
                     m_ExtraBufferingMs);
         queueSilence();
     }
