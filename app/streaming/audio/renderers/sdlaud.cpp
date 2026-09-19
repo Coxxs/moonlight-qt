@@ -8,7 +8,6 @@ SdlAudioRenderer::SdlAudioRenderer()
       m_AudioBuffer(nullptr),
       m_FrameSize(0),
       m_FrameDurationMs(0),
-      m_DeviceBufferSize(0),
       m_ExtraBufferingMs(0),
       m_Prefilling(false)
 {
@@ -57,8 +56,6 @@ bool SdlAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* 
         return false;
     }
 
-    m_DeviceBufferSize = have.size;
-
     m_AudioBuffer = SDL_malloc(m_FrameSize);
     if (m_AudioBuffer == nullptr) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -84,11 +81,6 @@ bool SdlAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* 
     SDL_PauseAudioDevice(m_AudioDevice, m_Prefilling ? 1 : 0);
 
     return true;
-}
-
-int SdlAudioRenderer::getQueuedAudioMs()
-{
-    return static_cast<int>(SDL_GetQueuedAudioSize(m_AudioDevice) / m_FrameSize * m_FrameDurationMs);
 }
 
 SdlAudioRenderer::~SdlAudioRenderer()
@@ -125,22 +117,11 @@ bool SdlAudioRenderer::submitAudio(int bytesWritten)
         return true;
     }
 
-    // If the jitter buffer ran dry, pause and rebuild it instead of letting the
-    // device stutter through a series of tiny underruns. SDL pulls audio in
-    // device-buffer-sized chunks, so anything less than one chunk queued means
-    // the next callback will underrun.
-    if (m_ExtraBufferingMs > 0 && !m_Prefilling &&
-            SDL_GetQueuedAudioSize(m_AudioDevice) < m_DeviceBufferSize) {
-        SDL_PauseAudioDevice(m_AudioDevice, 1);
-        m_Prefilling = true;
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "Audio underrun; refilling %d ms jitter buffer",
-                    m_ExtraBufferingMs);
-    }
-
     // Provide backpressure on the queue to ensure too many frames don't build up
     // in SDL's audio queue, but don't wait forever to avoid a deadlock if the
-    // audio device fails.
+    // audio device fails. The extra buffering target is the water level that
+    // absorbs jitter; do not pause mid-stream to refill it — that inserts a
+    // silence gap larger than a brief underrun.
     for (int i = 0; i < 100; i++) {
         // Our device may enter a permanent error status upon removal, so we need
         // to recreate the audio device to pick up the new default audio device.
@@ -149,7 +130,7 @@ bool SdlAudioRenderer::submitAudio(int bytesWritten)
         }
 
         // Only queue more samples where there is 50 ms or less in SDL's queue
-        if (getQueuedAudioMs() <= 50 + m_ExtraBufferingMs) {
+        if (SDL_GetQueuedAudioSize(m_AudioDevice) / m_FrameSize * m_FrameDurationMs <= 50 + m_ExtraBufferingMs) {
             break;
         }
 
@@ -162,7 +143,9 @@ bool SdlAudioRenderer::submitAudio(int bytesWritten)
                      SDL_GetError());
     }
 
-    if (m_Prefilling && getQueuedAudioMs() >= m_ExtraBufferingMs) {
+    if (m_Prefilling &&
+            SDL_GetQueuedAudioSize(m_AudioDevice) / m_FrameSize * m_FrameDurationMs >=
+            static_cast<Uint32>(m_ExtraBufferingMs)) {
         m_Prefilling = false;
         SDL_PauseAudioDevice(m_AudioDevice, 0);
     }

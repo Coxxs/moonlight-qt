@@ -23,9 +23,6 @@ private:
     void* m_AudioBuffer;
     Uint32 m_FrameSize;
     Uint32 m_FrameDurationMs;
-    Uint32 m_DeviceBufferSize;
     int m_ExtraBufferingMs;
     bool m_Prefilling;
-
-    int getQueuedAudioMs();
 };
