@@ -8,9 +8,9 @@ SdlAudioRenderer::SdlAudioRenderer()
       m_AudioBuffer(nullptr),
       m_FrameSize(0),
       m_FrameDurationMs(0),
-      m_DeviceBufferSize(0),
       m_ExtraBufferingMs(0),
-      m_Prefilling(false)
+      m_SilenceBuffer(nullptr),
+      m_SilenceBufferSize(0)
 {
     SDL_assert(!SDL_WasInit(SDL_INIT_AUDIO));
 
@@ -26,11 +26,7 @@ bool SdlAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* 
 {
     SDL_AudioSpec want, have;
 
-    // Extra buffering is a jitter buffer: playback starts only once this much
-    // audio is queued, so brief gaps in arrivals drain the buffer rather than
-    // underrunning the device.
     m_ExtraBufferingMs = StreamingPreferences::get()->extraBufferingMs;
-    m_Prefilling = m_ExtraBufferingMs > 0;
 
     SDL_zero(want);
     want.freq = opusConfig->sampleRate;
@@ -57,13 +53,27 @@ bool SdlAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* 
         return false;
     }
 
-    m_DeviceBufferSize = have.size;
-
     m_AudioBuffer = SDL_malloc(m_FrameSize);
     if (m_AudioBuffer == nullptr) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "Failed to allocate audio buffer");
         return false;
+    }
+
+    if (m_ExtraBufferingMs > 0) {
+        // The jitter buffer is built by playing this much silence ahead of the
+        // real audio, so the SDL queue steadily holds m_ExtraBufferingMs more
+        // than it otherwise would. This keeps the device running continuously;
+        // pausing/unpausing to prefill would insert gaps on every refill.
+        m_SilenceBufferSize = m_ExtraBufferingMs * (have.freq / 1000) * have.channels * getAudioBufferSampleSize();
+        m_SilenceBuffer = SDL_calloc(1, m_SilenceBufferSize);
+        if (m_SilenceBuffer == nullptr) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                         "Failed to allocate audio silence buffer");
+            return false;
+        }
+
+        queueSilence();
     }
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
@@ -80,8 +90,8 @@ bool SdlAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* 
                 "SDL audio driver: %s",
                 SDL_GetCurrentAudioDriver());
 
-    // Start playback (or wait for the prefill to complete first)
-    SDL_PauseAudioDevice(m_AudioDevice, m_Prefilling ? 1 : 0);
+    // Start playback
+    SDL_PauseAudioDevice(m_AudioDevice, 0);
 
     return true;
 }
@@ -89,6 +99,15 @@ bool SdlAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* 
 int SdlAudioRenderer::getQueuedAudioMs()
 {
     return static_cast<int>(SDL_GetQueuedAudioSize(m_AudioDevice) / m_FrameSize * m_FrameDurationMs);
+}
+
+void SdlAudioRenderer::queueSilence()
+{
+    if (SDL_QueueAudio(m_AudioDevice, m_SilenceBuffer, m_SilenceBufferSize) < 0) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "Failed to queue audio silence: %s",
+                     SDL_GetError());
+    }
 }
 
 SdlAudioRenderer::~SdlAudioRenderer()
@@ -101,6 +120,10 @@ SdlAudioRenderer::~SdlAudioRenderer()
 
     if (m_AudioBuffer != nullptr) {
         SDL_free(m_AudioBuffer);
+    }
+
+    if (m_SilenceBuffer != nullptr) {
+        SDL_free(m_SilenceBuffer);
     }
 
     SDL_QuitSubSystem(SDL_INIT_AUDIO);
@@ -125,17 +148,14 @@ bool SdlAudioRenderer::submitAudio(int bytesWritten)
         return true;
     }
 
-    // If the jitter buffer ran dry, pause and rebuild it instead of letting the
-    // device stutter through a series of tiny underruns. SDL pulls audio in
-    // device-buffer-sized chunks, so anything less than one chunk queued means
-    // the next callback will underrun.
-    if (m_ExtraBufferingMs > 0 && !m_Prefilling &&
-            SDL_GetQueuedAudioSize(m_AudioDevice) < m_DeviceBufferSize) {
-        SDL_PauseAudioDevice(m_AudioDevice, 1);
-        m_Prefilling = true;
+    // If the queue ran completely dry, the jitter buffer is gone and every
+    // small arrival gap from here on would be audible. Rebuild it once with a
+    // single block of silence rather than stuttering through many tiny gaps.
+    if (m_ExtraBufferingMs > 0 && SDL_GetQueuedAudioSize(m_AudioDevice) == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                    "Audio underrun; refilling %d ms jitter buffer",
+                    "Audio underrun; rebuilding %d ms jitter buffer",
                     m_ExtraBufferingMs);
+        queueSilence();
     }
 
     // Provide backpressure on the queue to ensure too many frames don't build up
@@ -160,11 +180,6 @@ bool SdlAudioRenderer::submitAudio(int bytesWritten)
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                      "Failed to queue audio sample: %s",
                      SDL_GetError());
-    }
-
-    if (m_Prefilling && getQueuedAudioMs() >= m_ExtraBufferingMs) {
-        m_Prefilling = false;
-        SDL_PauseAudioDevice(m_AudioDevice, 0);
     }
 
     return true;
