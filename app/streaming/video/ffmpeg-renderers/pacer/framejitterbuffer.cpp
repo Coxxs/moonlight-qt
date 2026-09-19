@@ -74,9 +74,9 @@ void FrameJitterBuffer::submitFrame(AVFrame* frame)
     m_QueueChanged.wakeOne();
 }
 
-FrameJitterBuffer::Status FrameJitterBuffer::status()
+FrameJitterBuffer::Snapshot FrameJitterBuffer::snapshot()
 {
-    Status s;
+    Snapshot s;
     s.delayMs = static_cast<int>(m_DelayUs / 1000);
     s.capacity = m_Capacity;
 

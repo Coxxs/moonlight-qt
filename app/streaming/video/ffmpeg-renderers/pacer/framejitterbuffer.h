@@ -25,14 +25,14 @@ public:
     // grown by this amount so buffering doesn't starve it of surfaces.
     int capacity() const { return m_Capacity; }
 
-    struct Status {
+    struct Snapshot {
         int delayMs;
         int queued;
         int capacity;
         int occupancyMs;
         int resetCount;
     };
-    Status status();
+    Snapshot snapshot();
 
 private:
     struct Entry {

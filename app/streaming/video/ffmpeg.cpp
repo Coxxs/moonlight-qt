@@ -987,7 +987,7 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
     }
 
     if (m_JitterBuffer != nullptr) {
-        FrameJitterBuffer::Status jitter = m_JitterBuffer->status();
+        FrameJitterBuffer::Snapshot jitter = m_JitterBuffer->snapshot();
         if (jitter.resetCount > 0) {
             ret = snprintf(&output[offset],
                            length - offset,
