@@ -262,6 +262,7 @@ ffmpeg {
         streaming/video/ffmpeg-renderers/genhwaccel.h \
         streaming/video/ffmpeg-renderers/sdlvid.h \
         streaming/video/ffmpeg-renderers/swframemapper.h \
+        streaming/video/ffmpeg-renderers/pacer/playoutclock.h \
         streaming/video/ffmpeg-renderers/pacer/pacer.h
 }
 libva {

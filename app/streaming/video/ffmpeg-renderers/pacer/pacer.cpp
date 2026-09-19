@@ -95,6 +95,7 @@ void Pacer::renderOnMainThread()
     m_FrameQueueLock.lock();
 
     if (!m_RenderQueue.isEmpty()) {
+        dropExpiredFrames();
         unsigned long waitMs = frameWaitMs(m_RenderQueue.head());
         if (waitMs > 0) {
             if (m_RenderTimer != 0) {
@@ -105,6 +106,7 @@ void Pacer::renderOnMainThread()
             return;
         }
         AVFrame* frame = m_RenderQueue.dequeue();
+        m_FrameDeadlines.remove(frame);
         m_FrameQueueLock.unlock();
 
         renderFrame(frame);
@@ -128,9 +130,26 @@ unsigned long Pacer::frameWaitMs(AVFrame* frame) const
     if (m_ExtraBufferingMs == 0) {
         return 0;
     }
-    int64_t remainingUs = frame->pkt_dts + m_ExtraBufferingMs * 1000LL -
+    int64_t remainingUs = m_FrameDeadlines.value(frame, 0) -
             static_cast<int64_t>(LiGetMicroseconds());
     return remainingUs > 0 ? static_cast<unsigned long>((remainingUs + 999) / 1000) : 0;
+}
+
+void Pacer::freeQueuedFrame(AVFrame* frame)
+{
+    m_FrameDeadlines.remove(frame);
+    av_frame_free(&frame);
+}
+
+void Pacer::dropExpiredFrames()
+{
+    if (m_ExtraBufferingMs == 0) {
+        return;
+    }
+    while (m_RenderQueue.count() > 1 && frameWaitMs(m_RenderQueue.at(1)) == 0) {
+        freeQueuedFrame(m_RenderQueue.dequeue());
+        m_VideoStats->pacerDroppedFrames++;
+    }
 }
 
 int Pacer::vsyncThread(void *context)
@@ -195,6 +214,7 @@ int Pacer::renderThread(void* context)
             break;
         }
 
+        me->dropExpiredFrames();
         unsigned long waitMs = me->frameWaitMs(me->m_RenderQueue.head());
         if (waitMs > 0) {
             me->m_RenderQueueNotEmpty.wait(&me->m_FrameQueueLock, waitMs);
@@ -202,6 +222,7 @@ int Pacer::renderThread(void* context)
             continue;
         }
         AVFrame* frame = me->m_RenderQueue.dequeue();
+        me->m_FrameDeadlines.remove(frame);
         me->m_FrameQueueLock.unlock();
 
         me->renderFrame(frame);
@@ -271,6 +292,7 @@ void Pacer::handleVsync(int timeUntilNextVsyncMillis)
     // Catch up if we're several frames ahead
     while (m_PacingQueue.count() > frameDropTarget) {
         AVFrame* frame = m_PacingQueue.dequeue();
+        m_FrameDeadlines.remove(frame);
 
         // Drop the lock while we call av_frame_free()
         m_FrameQueueLock.unlock();
@@ -414,13 +436,13 @@ void Pacer::renderFrame(AVFrame* frame)
             m_RenderQueueHistory.dequeue();
         }
 
-        m_RenderQueueHistory.enqueue(m_RenderQueue.count());
+        m_RenderQueueHistory.enqueue(qMax(0, m_RenderQueue.count() - m_ExtraFrames));
     }
 
+    frameDropTarget += m_ExtraFrames;
+
     // Catch up if we're several frames ahead
-    while (m_RenderQueue.count() > frameDropTarget &&
-           (m_ExtraBufferingMs == 0 ||
-            (m_RenderQueue.count() > 1 && frameWaitMs(m_RenderQueue.at(1)) == 0))) {
+    while (m_ExtraBufferingMs == 0 && m_RenderQueue.count() > frameDropTarget) {
         AVFrame* frame = m_RenderQueue.dequeue();
 
         // Drop the lock while we call av_frame_free()
@@ -446,7 +468,10 @@ void Pacer::dropFrameForEnqueue(QQueue<AVFrame*>& queue)
     SDL_assert(queue.size() <= capacity);
     if (queue.size() == capacity) {
         AVFrame* frame = queue.dequeue();
-        av_frame_free(&frame);
+        freeQueuedFrame(frame);
+        if (m_ExtraBufferingMs > 0) {
+            m_VideoStats->pacerDroppedFrames++;
+        }
     }
 }
 
@@ -457,6 +482,22 @@ void Pacer::submitFrame(AVFrame* frame)
 
     // Queue the frame and possibly wake up the render thread
     m_FrameQueueLock.lock();
+    if (m_ExtraBufferingMs > 0 && frame->pts != AV_NOPTS_VALUE) {
+        auto deadline = m_PlayoutClock.schedule(static_cast<uint32_t>(frame->pts),
+                                               LiGetMicroseconds(), m_ExtraBufferingMs);
+        if (deadline.reset) {
+            while (!m_RenderQueue.isEmpty()) {
+                freeQueuedFrame(m_RenderQueue.dequeue());
+                m_VideoStats->pacerDroppedFrames++;
+            }
+            while (!m_PacingQueue.isEmpty()) {
+                freeQueuedFrame(m_PacingQueue.dequeue());
+                m_VideoStats->pacerDroppedFrames++;
+            }
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Video playout clock reset (%d ms buffer)", m_ExtraBufferingMs);
+        }
+        m_FrameDeadlines.insert(frame, deadline.timeUs);
+    }
     if (m_VsyncSource != nullptr) {
         dropFrameForEnqueue(m_PacingQueue);
         m_PacingQueue.enqueue(frame);
