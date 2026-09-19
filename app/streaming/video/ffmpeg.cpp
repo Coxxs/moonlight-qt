@@ -227,6 +227,7 @@ FFmpegVideoDecoder::FFmpegVideoDecoder(bool testOnly)
       m_FrontendRenderer(nullptr),
       m_ConsecutiveFailedDecodes(0),
       m_Pacer(nullptr),
+      m_JitterBuffer(nullptr),
       m_BwTracker(10, 250),
       m_FramesIn(0),
       m_FramesOut(0),
@@ -277,6 +278,10 @@ void FFmpegVideoDecoder::reset()
 
     m_FramesIn = m_FramesOut = 0;
     m_FrameInfoQueue.clear();
+
+    // The jitter buffer feeds Pacer, so it must go first
+    delete m_JitterBuffer;
+    m_JitterBuffer = nullptr;
 
     delete m_Pacer;
     m_Pacer = nullptr;
@@ -501,6 +506,11 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
                                  params->enableFramePacing || (params->enableVsync && (m_FrontendRenderer->getRendererAttributes() & RENDERER_ATTRIBUTE_FORCE_PACING)))) {
             return false;
         }
+
+        if (params->extraBufferingMs > 0) {
+            m_JitterBuffer = new FrameJitterBuffer(m_Pacer, &m_ActiveWndVideoStats,
+                                                   params->extraBufferingMs, params->frameRate);
+        }
     }
 
     m_VideoDecoderCtx = avcodec_alloc_context3(decoder);
@@ -544,7 +554,8 @@ bool FFmpegVideoDecoder::completeInitialization(const AVCodec* decoder, enum AVP
     m_VideoDecoderCtx->pkt_timebase.den = 90000;
 
     // Allocate enough extra frames for Pacer to avoid stalling the decoder
-    m_VideoDecoderCtx->extra_hw_frames = PACER_MAX_OUTSTANDING_FRAMES;
+    m_VideoDecoderCtx->extra_hw_frames = PACER_MAX_OUTSTANDING_FRAMES +
+            (m_JitterBuffer != nullptr ? m_JitterBuffer->capacity() : 0);
 
     // For non-hwaccel decoders, set the pix_fmt to hint to the decoder which
     // format should be used. This is necessary for certain decoders like the
@@ -2039,7 +2050,12 @@ void FFmpegVideoDecoder::decoderThreadProc()
                     m_ActiveWndVideoStats.decodedFrames++;
 
                     // Queue the frame for rendering (or render now if pacer is disabled)
-                    m_Pacer->submitFrame(frame);
+                    if (m_JitterBuffer != nullptr) {
+                        m_JitterBuffer->submitFrame(frame);
+                    }
+                    else {
+                        m_Pacer->submitFrame(frame);
+                    }
                 }
                 else if (err == AVERROR(EAGAIN)) {
                     VIDEO_FRAME_HANDLE handle;

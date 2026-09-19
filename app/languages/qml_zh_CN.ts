@@ -837,6 +837,18 @@
         <translation>通过延迟过早进入的帧来减少卡顿</translation>
     </message>
     <message>
+        <source>Additional buffering: %1 ms</source>
+        <translation>额外缓冲：%1 ms</translation>
+    </message>
+    <message>
+        <source>Delays audio and video by a fixed amount to absorb brief network jitter. Higher values increase input latency. Takes effect on the next stream.</source>
+        <translation>将音频和视频固定延迟一段时间，以吸收短时网络抖动。数值越大，操作延迟越高。下次串流时生效。</translation>
+    </message>
+    <message>
+        <source>Leave at 0 unless you see stutter on a jittery connection.</source>
+        <translation>除非在抖动较大的网络上出现卡顿，否则请保持为 0。</translation>
+    </message>
+    <message>
         <location filename="../gui/SettingsView.qml" line="856"/>
         <source>Audio Settings</source>
         <translation>音频设置</translation>

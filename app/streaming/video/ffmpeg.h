@@ -8,6 +8,7 @@
 #include "decoder.h"
 #include "ffmpeg-renderers/renderer.h"
 #include "ffmpeg-renderers/pacer/pacer.h"
+#include "ffmpeg-renderers/pacer/framejitterbuffer.h"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -113,6 +114,7 @@ private:
     IFFmpegRenderer* m_FrontendRenderer;
     int m_ConsecutiveFailedDecodes;
     Pacer* m_Pacer;
+    FrameJitterBuffer* m_JitterBuffer;
     BandwidthTracker m_BwTracker;
     VIDEO_STATS m_ActiveWndVideoStats;
     VIDEO_STATS m_LastWndVideoStats;

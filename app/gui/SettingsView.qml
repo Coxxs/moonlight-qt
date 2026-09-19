@@ -849,6 +849,45 @@ Flickable {
                     }
                 }
 
+                Label {
+                    width: parent.width
+                    id: extraBufferingTitle
+                    text: qsTr("Additional buffering: %1 ms").arg(extraBufferingSlider.value)
+                    font.pointSize: 12
+                    wrapMode: Text.Wrap
+                }
+
+                Slider {
+                    id: extraBufferingSlider
+                    hoverEnabled: true
+
+                    value: StreamingPreferences.extraBufferingMs
+
+                    stepSize: 5
+                    from: 0
+                    to: StreamingPreferences.maxExtraBufferingMs
+
+                    snapMode: "SnapAlways"
+                    width: Math.min(extraBufferingDesc.implicitWidth, parent.width)
+
+                    onValueChanged: {
+                        StreamingPreferences.extraBufferingMs = value
+                    }
+
+                    ToolTip.delay: 1000
+                    ToolTip.timeout: 5000
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Delays audio and video by a fixed amount to absorb brief network jitter. Higher values increase input latency. Takes effect on the next stream.")
+                }
+
+                Label {
+                    width: parent.width
+                    id: extraBufferingDesc
+                    text: qsTr("Leave at 0 unless you see stutter on a jittery connection.")
+                    font.pointSize: 9
+                    wrapMode: Text.Wrap
+                }
+
                 CheckBox {
                     id: enableHdr
                     width: parent.width

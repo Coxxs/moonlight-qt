@@ -312,6 +312,8 @@ bool Session::chooseDecoder(StreamingPreferences::VideoDecoderSelection vds,
     params.window = window;
     params.enableVsync = enableVsync;
     params.enableFramePacing = enableFramePacing;
+    // Never buffer during decoder probing; it would only slow down startup
+    params.extraBufferingMs = testOnly ? 0 : StreamingPreferences::get()->extraBufferingMs;
     params.testOnly = testOnly;
     params.vds = vds;
     params.renderer = renderer;
