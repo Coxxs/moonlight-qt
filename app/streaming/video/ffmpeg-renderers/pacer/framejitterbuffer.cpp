@@ -8,7 +8,8 @@ FrameJitterBuffer::FrameJitterBuffer(Pacer* pacer, PVIDEO_STATS videoStats, int 
     // fps rounding and timeline corrections that push deadlines out.
     m_Capacity((maxVideoFps * delayMs + 999) / 1000 + 2),
     m_Thread(nullptr),
-    m_Stopping(false)
+    m_Stopping(false),
+    m_ResetCount(0)
 {
     SDL_assert(delayMs > 0);
 
@@ -57,6 +58,7 @@ void FrameJitterBuffer::submitFrame(AVFrame* frame)
         if (schedule.reset) {
             // Anything still queued was scheduled against a timeline that no longer exists
             dropQueuedFramesLocked();
+            m_ResetCount++;
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Video playout timeline reset");
         }
         ticks = schedule.ticks;
@@ -70,6 +72,28 @@ void FrameJitterBuffer::submitFrame(AVFrame* frame)
     m_Lock.unlock();
 
     m_QueueChanged.wakeOne();
+}
+
+FrameJitterBuffer::Status FrameJitterBuffer::status()
+{
+    Status s;
+    s.delayMs = static_cast<int>(m_DelayUs / 1000);
+    s.capacity = m_Capacity;
+
+    m_Lock.lock();
+    s.queued = m_Queue.count();
+    s.resetCount = m_ResetCount;
+    if (s.queued > 0) {
+        int64_t remainingUs = m_Clock.deadlineUs(m_Queue.last().ticks) -
+                static_cast<int64_t>(LiGetMicroseconds());
+        s.occupancyMs = remainingUs > 0 ? static_cast<int>((remainingUs + 500) / 1000) : 0;
+    }
+    else {
+        s.occupancyMs = 0;
+    }
+    m_Lock.unlock();
+
+    return s;
 }
 
 void FrameJitterBuffer::dropQueuedFramesLocked()

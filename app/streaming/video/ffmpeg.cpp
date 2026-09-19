@@ -985,12 +985,79 @@ void FFmpegVideoDecoder::stringifyVideoStats(VIDEO_STATS& stats, char* output, i
 
         offset += ret;
     }
+
+    if (m_JitterBuffer != nullptr) {
+        FrameJitterBuffer::Status jitter = m_JitterBuffer->status();
+        if (jitter.resetCount > 0) {
+            ret = snprintf(&output[offset],
+                           length - offset,
+                           "Video jitter buffer: %d/%d frames, %d/%d ms (%d reset%s)\n",
+                           jitter.queued,
+                           jitter.capacity,
+                           jitter.occupancyMs,
+                           jitter.delayMs,
+                           jitter.resetCount,
+                           jitter.resetCount == 1 ? "" : "s");
+        }
+        else {
+            ret = snprintf(&output[offset],
+                           length - offset,
+                           "Video jitter buffer: %d/%d frames, %d/%d ms\n",
+                           jitter.queued,
+                           jitter.capacity,
+                           jitter.occupancyMs,
+                           jitter.delayMs);
+        }
+    }
+    else {
+        ret = snprintf(&output[offset],
+                       length - offset,
+                       "Video jitter buffer: off\n");
+    }
+    if (ret < 0 || ret >= length - offset) {
+        SDL_assert(false);
+        return;
+    }
+    offset += ret;
+
+    int audioQueuedMs = -1;
+    int audioExtraMs = 0;
+    if (Session::get() != nullptr && Session::get()->getAudioJitterStatus(&audioQueuedMs, &audioExtraMs)) {
+        if (audioQueuedMs >= 0 && audioExtraMs > 0) {
+            ret = snprintf(&output[offset],
+                           length - offset,
+                           "Audio jitter buffer: %d/%d ms\n",
+                           audioQueuedMs,
+                           audioExtraMs);
+        }
+        else if (audioQueuedMs >= 0) {
+            ret = snprintf(&output[offset],
+                           length - offset,
+                           "Audio jitter buffer: %d ms queued\n",
+                           audioQueuedMs);
+        }
+        else if (audioExtraMs > 0) {
+            ret = snprintf(&output[offset],
+                           length - offset,
+                           "Audio jitter buffer: N/A (%d ms configured)\n",
+                           audioExtraMs);
+        }
+        else {
+            ret = snprintf(&output[offset],
+                           length - offset,
+                           "Audio jitter buffer: N/A\n");
+        }
+        if (ret < 0 || ret >= length - offset) {
+            SDL_assert(false);
+            return;
+        }
+    }
 }
 
 void FFmpegVideoDecoder::logVideoStats(VIDEO_STATS& stats, const char* title)
 {
     if (stats.renderedFps > 0 || stats.renderedFrames != 0) {
-        char videoStatsStr[512];
+        char videoStatsStr[1024];
         stringifyVideoStats(stats, videoStatsStr, sizeof(videoStatsStr));
 
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,

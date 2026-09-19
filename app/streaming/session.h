@@ -123,6 +123,8 @@ public:
         return m_OverlayManager;
     }
 
+    bool getAudioJitterStatus(int* queuedMs, int* extraMs);
+
     void flushWindowEvents();
 
     void setShouldExit(bool quitHostApp = false);

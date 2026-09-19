@@ -31,6 +31,15 @@ public:
     };
     virtual AudioFormat getAudioBufferFormat() = 0;
 
+    // Milliseconds of audio currently queued for playback, or -1 if unknown.
+    virtual int getQueuedAudioMs() {
+        return -1;
+    }
+
+    virtual int extraBufferingMs() {
+        return 0;
+    }
+
     int getAudioBufferSampleSize() {
         switch (getAudioBufferFormat()) {
         case IAudioRenderer::AudioFormat::Sint16NE:

@@ -98,7 +98,16 @@ bool SdlAudioRenderer::prepareForPlayback(const OPUS_MULTISTREAM_CONFIGURATION* 
 
 int SdlAudioRenderer::getQueuedAudioMs()
 {
+    if (m_AudioDevice == 0 || m_FrameSize == 0) {
+        return 0;
+    }
+
     return static_cast<int>(SDL_GetQueuedAudioSize(m_AudioDevice) / m_FrameSize * m_FrameDurationMs);
+}
+
+int SdlAudioRenderer::extraBufferingMs()
+{
+    return m_ExtraBufferingMs;
 }
 
 void SdlAudioRenderer::queueSilence()

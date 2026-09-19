@@ -18,6 +18,10 @@ public:
 
     virtual AudioFormat getAudioBufferFormat();
 
+    virtual int getQueuedAudioMs();
+
+    virtual int extraBufferingMs();
+
 private:
     SDL_AudioDeviceID m_AudioDevice;
     void* m_AudioBuffer;
@@ -27,6 +31,5 @@ private:
     void* m_SilenceBuffer;
     Uint32 m_SilenceBufferSize;
 
-    int getQueuedAudioMs();
     void queueSilence();
 };

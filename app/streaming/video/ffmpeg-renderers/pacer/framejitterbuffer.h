@@ -25,6 +25,15 @@ public:
     // grown by this amount so buffering doesn't starve it of surfaces.
     int capacity() const { return m_Capacity; }
 
+    struct Status {
+        int delayMs;
+        int queued;
+        int capacity;
+        int occupancyMs;
+        int resetCount;
+    };
+    Status status();
+
 private:
     struct Entry {
         AVFrame* frame;
@@ -46,4 +55,5 @@ private:
     QWaitCondition m_QueueChanged;
     SDL_Thread* m_Thread;
     bool m_Stopping;
+    int m_ResetCount;
 };

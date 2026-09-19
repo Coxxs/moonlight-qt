@@ -93,6 +93,21 @@ bool Session::initializeAudioRenderer()
     return true;
 }
 
+bool Session::getAudioJitterStatus(int* queuedMs, int* extraMs)
+{
+    if (m_AudioRenderer == nullptr) {
+        return false;
+    }
+
+    if (queuedMs != nullptr) {
+        *queuedMs = m_AudioRenderer->getQueuedAudioMs();
+    }
+    if (extraMs != nullptr) {
+        *extraMs = m_AudioRenderer->extraBufferingMs();
+    }
+    return true;
+}
+
 int Session::getAudioRendererCapabilities(int audioConfiguration)
 {
     int caps = 0;
