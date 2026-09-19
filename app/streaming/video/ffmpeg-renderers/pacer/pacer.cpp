@@ -188,6 +188,7 @@ int Pacer::vsyncThread(void *context)
 int Pacer::renderThread(void* context)
 {
     Pacer* me = reinterpret_cast<Pacer*>(context);
+    bool firstBufferedFrame = me->m_ExtraBufferingMs > 0;
 
     if (SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH) < 0) {
         SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION,
@@ -197,7 +198,9 @@ int Pacer::renderThread(void* context)
 
     while (!me->m_Stopping) {
         // Wait for the renderer to be ready for the next frame
-        me->m_VsyncRenderer->waitToRender();
+        if (me->m_ExtraBufferingMs == 0) {
+            me->m_VsyncRenderer->waitToRender();
+        }
 
         // Acquire the frame queue lock to protect the queue and
         // the not empty condition
@@ -229,7 +232,20 @@ int Pacer::renderThread(void* context)
         me->m_FrameDeadlines.remove(frame);
         me->m_FrameQueueLock.unlock();
 
+        if (me->m_ExtraBufferingMs > 0) {
+            if (firstBufferedFrame) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Buffered video: first frame due, acquiring render target");
+            }
+            me->m_VsyncRenderer->waitToRender();
+            if (firstBufferedFrame) {
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Buffered video: render target wait returned, rendering first frame");
+            }
+        }
         me->renderFrame(frame);
+        if (firstBufferedFrame) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Buffered video: first render call completed");
+            firstBufferedFrame = false;
+        }
     }
 
     // Notify the renderer that it is being destroyed soon
